@@ -1,0 +1,104 @@
+#ONE-WAY ANOVA TEST. For this exercise I am going to compare the means between more than two groups. In one-way ANOVA, the data is organised into several groups based on one single grouping variable (called factor variable). It works as an extension of the two sample T-test, but applied in the cases where there are more than two groups to compare.#
+
+#1)Load the data set. I will use the build-in R PlantGrowth. This data set shows the weight of a group of plants after an experiment using two different treatments and a control group (with no treatment). The data set contains 30 rows and 2 columns. The weight column has numeric values and the group column contains levels as factors (control, trt1, trt2). The data set can be divided into 3 (by group) making it suitable to conduct one-way ANOVA.#
+
+df <- PlantGrowth
+str(df)
+levels(df$group)
+
+# It is not the case, but if the levels were not to be in the correct order I can reorder them using the following func.#
+
+df$group <- ordered(df$group,
+                    levels = c("ctrl", "trt1", "trt2"))
+
+
+#2) Summary statistics, This time I do it by group (since we have 3 groups it makes more sense to visualise them in such a way). Take a look at their mean, median and sd I conclude that, on the surface, it does seem like there is a small difference between the three groups. However this is not enough to determine if, statistically the difference is significant or not.#
+
+library(dplyr)
+
+group_by(df, group) %>%
+  summarise (
+    count = n(),
+    mean = mean (weight, na.rm = TRUE), #NA remove. If FALSE it returns a count of NA's#
+    sd = sd(weight, na.rm = TRUE),
+    median = median(weight, na.rm = TRUE))
+    
+
+#3) Visualising the data. I create the box plots by group and colour by group. I can compare in a graphical way the medians, the interquartile range, the outliers, the 25th percentile and the 75th percentile. I can appreciate that the medians are relatively similar to each other.#
+
+#install.packages("Rtools")#
+#install.packages("devtools")#
+
+library(ggplot2)
+library(ggpubr)
+
+ggboxplot(df, x = "group", y = "weight",
+          color = "group", palette = c("blue", "orange", "red"),
+          order = c("ctrl", "trt1", "trt2"),
+          ylab = "Weight", xlab = "Treatment",
+          boxweb = 0.9,
+          ggtheme = theme_classic())
+
+# Another useful way to visualise this data is to use a Mean plot. This way I can visually compare their means, error, individual points, outliers and the distance between each of them.#
+
+ggline(df, x = "group", y = "weight", 
+       add = c("mean_se", "jitter"), 
+       order = c("ctrl", "trt1", "trt2"),
+       ylab = "Weight", xlab = "Treatment",
+       boxweb = 0.9,
+       ggtheme = theme_classic())
+       
+
+
+#3) Computing one-way ANOVA test. I use the func aov() and I use the func summary.aov() to sumarise the analysis. In this case the factor variable will be the weight.#
+
+res.plants.aov <- aov(weight ~ group, data = df)
+
+summary(res.plants.aov) # As the p-value is less than the significance level 0.05, I conclude that there are significant differences between the groups highlighted with “*" in the model summary.#
+
+#4) Multiple pairwise-comparison between the means of groups. In one-way ANOVA test, a significant p-value indicates that some of the group means are different, but I don’t know which pairs of groups are different. It’s possible to perform multiple pairwise-comparison, to determine if the mean difference between specific pairs of groups are statistically significant. As the ANOVA test is significant, I can compute Tukey HSD (Tukey Honest Significant Differences, R function: TukeyHSD()) for performing multiple pairwise-comparison between the means of groups.The function TukeyHD() takes the fitted ANOVA as an argument.#
+
+TukeyHSD(res.plants.aov) #It can be seen that only the difference between trt2 and trt1 is significant with an adjusted p-value of 0.012.#
+
+#Alternatively, multiple comparisons is possible using the function glht() [in multcomp package] to perform multiple comparison procedures for an ANOVA. glht stands for general linear hypothesis tests.#
+
+#install.packages("multcomp")#
+library(multcomp)
+summary(glht(res.plants.aov, linfct = mcp(group = "Tukey")))
+
+#If what I want is a matrix to identify the groups that are significantly different. I can use the pairwise t-test. The func pairwise.t.test() can be also used to calculate pairwise comparisons between group levels with corrections for multiple testing.#
+
+pairwise.t.test(df$weight, df$group,
+                 p.adjust.method = "BH")
+                 
+
+
+#5) Checking the validity of the ANOVA test. The ANOVA test assumes that the data is normally distributed and that the variance across groups is homogenious. I check those with the following plots.#
+
+#Homogeneity of variances: the residuals versus fits plot can be used to check the homogeneity of variances.In the plot below, there is no evident relationships between residuals and fitted values (the mean of each groups), which is good. So, I can assume the homogeneity of variances. The residuals roughly form 3 "vertical bands" across the 0 line. This suggests that the variances of the error terms are not equal. Points 17, 15 and 4 "stand out" from the rest of the residuals. This suggests that these are outliers. It can be useful to remove these outliers to meet the test assumptions.#
+
+plot(res.plants.aov, 5)
+
+#I am using Levene's test to check the homogeneity of variances. Other tests can be used, but Levene's is less sensitive to outliers, and since I have 3 of them, I prefer to use this method before removing anything from the data set.#
+
+library(car)
+
+leveneTest(weight ~ group, data = df) #From the output above the p-value is not less than the significance level of 0.05. This means that there is no evidence to suggest that the variance across groups is significantly different. Therefore, we can assume the homogeneity of variances in the different treatment groups.#
+
+#Normality test. Using a plot of residuals, the quantiles of the residuals are plotted against the quantiles of the normal distribution. A 45-degree reference line is also plotted. The normal probability plot of residuals is used to check the assumption that the residuals are normally distributed. It follows approximately a straight line, then I can assume normality.#
+
+plot(res.plants.aov, 2)
+
+#In combination to the plot of residuals, I use a Shapiro-Wilk test on the ANOVA residuals.#
+
+aov_residuals <- residuals(object = res.plants.aov) #I extract the residuals#
+
+shapiro.test(x = aov_residuals) #The NULL hypothesis that the residuals are normally distributed. Since the p-value of the test is > 0.05  (0.4379), I can assume that the residuals for this ANNOVA test are normally distributed.#
+
+# To summarise, I can conclude that the treatment used for the trt2 group shows a significant and positive statistical difference compared to the trt1 group, but there are no other significant differences between the other groups. In addition, I can assume that the treatment used in trt2 is more efficient than the trt1 one, when used to stimulate plant growth, within this particular population of plants. Finally, the trt1 group, witch showed no significant difference with the control, group failed to show any evidence when applied to growth stimulation.#
+
+
+
+#6) Extra: Non-parametric alternative to on-way ANOVA. This method can be used when ANOVA parameters are not met.It is the Kruskal-Wallis rank sum test.#
+
+kruskal.test(weight ~ group, data = df)
